@@ -1,10 +1,10 @@
-﻿using System.Collections;
-using System.Collections.Generic;
+﻿using System;
 using Unity.Entities;
-using UnityEngine;
+using Unity.Mathematics;
 
 [GenerateAuthoringComponent]
+[Serializable]
 public struct Direction : IComponentData
 {
-    public Vector3 Dir;
+    public float3 Dir;
 }

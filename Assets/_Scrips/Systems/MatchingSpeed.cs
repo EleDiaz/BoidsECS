@@ -1,17 +1,38 @@
 ﻿using System.Collections.Generic;
+using Unity.Burst;
 using Unity.Collections;
 using Unity.Entities;
+using Unity.Jobs;
 using UnityEngine;
 
 namespace DefaultNamespace
 {
-    public class MatchingSpeed : ComponentSystem
+    [UpdateInGroup(typeof(BoidSystem))]
+    [UpdateBefore(typeof(LimitSpeed))]
+    public class MatchingSpeed : SystemBase
     {
+        [BurstCompile]
+        private struct SumOfVelocities : IJob
+        {
+            public NativeArray<Velocity> Velocities;
+            public float SumResult;
+
+            public void Execute()
+            {
+                for (int i = 0; i < Velocities.Length; i++)
+                {
+                    SumResult += Velocities[i].Vel;
+                }
+            }
+        }
 
         private EntityQuery _boidsGroup;
+        private NativeArray<Velocity> _velocities;
+        private List<BoidGroup> _groups;
 
         protected override void OnCreate()
         {
+            _groups = new List<BoidGroup>();
             _boidsGroup = GetEntityQuery(
                 ComponentType.ReadOnly<BoidGroup>(),
                 ComponentType.ReadWrite<Velocity>());
@@ -19,26 +40,32 @@ namespace DefaultNamespace
 
         protected override void OnUpdate()
         {
-            List<BoidGroup> groups = new List<BoidGroup>();
-            EntityManager.GetAllUniqueSharedComponentData(groups);
+            EntityManager.GetAllUniqueSharedComponentData(_groups);
 
-            foreach (var bGrp in groups)
+            foreach (var bGrp in _groups)
             {
-                _boidsGroup.SetSharedComponentFilter(new BoidGroup {Group = bGrp.Group});
-                var velocities = _boidsGroup.ToComponentDataArray<Velocity>(Allocator.Temp);
-                var sumVel = 0.0f;
-                for (int i = 0; i < velocities.Length; i++)
-                {
-                    sumVel += velocities[i].Vel;
-                }
+                _boidsGroup.AddSharedComponentFilter(bGrp);
+                _velocities = _boidsGroup.ToComponentDataArray<Velocity>(Allocator.TempJob);
+                var amount = _velocities.Length;
 
-                for (int i = 0; i < velocities.Length; i++)
+                var sumVel = new SumOfVelocities
                 {
-                    var velocity = velocities[i];
-                    sumVel -= velocity.Vel; // Remove its own velocity to get precise average
-                    velocity.Vel = sumVel / (velocities.Length - 1);
-                }
+                    Velocities = _velocities
+                };
+                sumVel.Schedule().Complete();
+
+                Entities
+                    .WithSharedComponentFilter(bGrp)
+                    .ForEach((ref Velocity velocity) =>
+                    {
+                        var sum = sumVel.SumResult - velocity.Vel; // Remove its own velocity to get precise average
+                        velocity.Vel = sum / (amount - 1);
+                    }).Run();
+
+                _velocities.Dispose();
+                _boidsGroup.ResetFilter();
             }
+            _groups.Clear();
         }
     }
 }

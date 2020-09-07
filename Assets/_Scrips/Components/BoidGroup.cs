@@ -1,10 +1,10 @@
-﻿using Unity.Entities;
+﻿using System;
+using Unity.Entities;
 using UnityEngine;
 
 namespace DefaultNamespace
 {
-
-    [GenerateAuthoringComponent]
+    [Serializable]
     public struct BoidGroup : ISharedComponentData
     {
         public int Group;

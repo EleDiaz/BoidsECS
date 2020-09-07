@@ -1,50 +1,91 @@
 ﻿using System.Collections.Generic;
+using Unity.Burst;
 using Unity.Collections;
 using Unity.Entities;
-using UnityEngine;
+using Unity.Jobs;
+using Unity.Mathematics;
+using Unity.Transforms;
 
 namespace DefaultNamespace
 {
-    public class Distancing : ComponentSystem
+    // [DisableAutoCreation]
+    [UpdateBefore(typeof(MovementTowardsCentre))]
+    [UpdateInGroup(typeof(BoidSystem))]
+    public class Distancing : SystemBase
     {
+        [BurstCompile]
+        private struct Distance : IJob
+        {
+            public NativeArray<Translation> Positions;
+            public NativeArray<Direction> Directions;
+            public float Distancing;
+
+            public void Execute()
+            {
+                for (int i = 0; i < Positions.Length; i++)
+                {
+                    var c = new float3();
+                    for (int j = 0; j < Positions.Length; j++)
+                    {
+                        var dirNear = Positions[i].Value - Positions[j].Value;
+                        var distance = math.length(dirNear);
+                        if (distance < Distancing)
+                        {
+                            c += (Distancing / (Distancing - distance)) * dirNear;
+                        }
+                    }
+
+                    var direction = Directions[i];
+                    direction.Dir += c;
+                }
+            }
+        }
+
         private EntityQuery _boidsGroup;
+        private List<BoidGroup> _groups;
 
         protected override void OnCreate()
         {
+            _groups = new List<BoidGroup>();
             _boidsGroup = GetEntityQuery(
                 ComponentType.ReadOnly<BoidGroup>(),
-                ComponentType.ReadOnly<Position>(),
-                ComponentType.ReadWrite<Direction>(),
-                ComponentType.ReadWrite<Velocity>());
+                ComponentType.ReadOnly<Translation>(),
+                ComponentType.ReadWrite<Direction>());
         }
 
         protected override void OnUpdate()
         {
-            List<BoidGroup> groups = new List<BoidGroup>();
-            EntityManager.GetAllUniqueSharedComponentData(groups);
+            EntityManager.GetAllUniqueSharedComponentData(_groups);
 
-            foreach (var bGrp in groups)
+            foreach (var bGrp in _groups)
             {
-                _boidsGroup.SetSharedComponentFilter(new BoidGroup {Group = bGrp.Group});
-                var positions = _boidsGroup.ToComponentDataArray<Position>(Allocator.Temp);
-                var directions = _boidsGroup.ToComponentDataArray<Direction>(Allocator.Temp);
+                _boidsGroup.AddSharedComponentFilter(bGrp);
+                var positions = _boidsGroup.ToComponentDataArray<Translation>(Allocator.Temp);
 
-                for (int i = 0; i < positions.Length; i++)
-                {
-                    var c = new Vector3();
-                    for (int j = 0; j < positions.Length; j++)
+                Entities
+                    .WithSharedComponentFilter(bGrp)
+                    .WithReadOnly(positions)
+                    .ForEach((ref Direction direction, in Translation position) =>
                     {
-                        var dirNear = positions[i].Pos - positions[j].Pos;
-                        if (dirNear.sqrMagnitude < bGrp.Distancing * bGrp.Distancing)
+                        var c = new float3();
+                        for (int j = 0; j < positions.Length; j++)
                         {
-                            c += (dirNear.magnitude) * dirNear;
+                            var dirNear = position.Value - positions[j].Value;
+                            var distance = math.length(dirNear);
+                            if (distance < bGrp.Distancing)
+                            {
+                                c += (bGrp.Distancing / (bGrp.Distancing - distance)) * dirNear;
+                            }
                         }
-                    }
 
-                    var direction = directions[i];
-                    direction.Dir += c;
-                }
+                        direction.Dir += c;
+                    }).Run();
+
+                positions.Dispose();
+                _boidsGroup.ResetFilter();
             }
+
+            _groups.Clear();
         }
     }
 }
