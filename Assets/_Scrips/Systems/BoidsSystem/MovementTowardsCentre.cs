@@ -13,9 +13,10 @@ namespace DefaultNamespace
     [UpdateBefore(typeof(LimitSpeed)), UpdateBefore(typeof(MatchingSpeed))]
     public class MovementTowardsCentre : SystemBase
     {
-        // [BurstCompile]
+        [BurstCompile]
         private struct SumOfPositions : IJob
         {
+            [ReadOnly]
             public NativeArray<Translation> Positions;
             public NativeReference<float3> SumResult;
 
@@ -30,6 +31,7 @@ namespace DefaultNamespace
         }
 
         private EntityQuery _boidsGroup;
+        [ReadOnly]
         private NativeArray<Translation> _positions;
         private List<BoidGroup> _groups;
 
@@ -57,9 +59,9 @@ namespace DefaultNamespace
                     Positions = _positions,
                     SumResult = sumPos
                 };
-                var finishSums = sumOfPositions.Schedule(Dependency);
+                sumOfPositions.Run();
 
-                var jobHandle = Entities
+                Entities
                     .WithSharedComponentFilter(bGrp)
                     .ForEach(
                         (ref Direction direction, in Translation position) =>
@@ -67,11 +69,10 @@ namespace DefaultNamespace
                             float3 centre = (sumPos.Value - position.Value) / (amount - 1);
                             var centreVector = centre - position.Value;
                             direction.Dir += centreVector;
-                        }).Schedule(JobHandle.CombineDependencies(finishSums, Dependency));
+                        }).Run();
 
-                _positions.Dispose(jobHandle);
-                sumPos.Dispose(jobHandle);
-                jobHandle.Complete();
+                _positions.Dispose();
+                sumPos.Dispose();
                 _boidsGroup.ResetFilter();
             }
 

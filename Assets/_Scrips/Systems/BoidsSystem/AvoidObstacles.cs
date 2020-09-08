@@ -41,7 +41,7 @@ namespace DefaultNamespace
 
                 if (world.CastRay(raycastInput, out firstHit))
                 {
-                    // direction.Dir = math.reflect(direction.Dir, firstHit.SurfaceNormal);
+                    direction.Dir = math.reflect(direction.Dir, firstHit.SurfaceNormal);
                 }
             }).Run();
         }

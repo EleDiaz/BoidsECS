@@ -3,6 +3,7 @@ using Unity.Burst;
 using Unity.Collections;
 using Unity.Entities;
 using Unity.Jobs;
+using Unity.Mathematics;
 using UnityEngine;
 
 namespace DefaultNamespace
@@ -15,13 +16,13 @@ namespace DefaultNamespace
         private struct SumOfVelocities : IJob
         {
             public NativeArray<Velocity> Velocities;
-            public float SumResult;
+            public NativeReference<float> SumResult;
 
             public void Execute()
             {
                 for (int i = 0; i < Velocities.Length; i++)
                 {
-                    SumResult += Velocities[i].Vel;
+                    SumResult.Value += Velocities[i].Vel;
                 }
             }
         }
@@ -48,21 +49,23 @@ namespace DefaultNamespace
                 _velocities = _boidsGroup.ToComponentDataArray<Velocity>(Allocator.TempJob);
                 var amount = _velocities.Length;
 
-                var sumVel = new SumOfVelocities
+                var sumVel = new NativeReference<float>(Allocator.TempJob);
+                new SumOfVelocities
                 {
-                    Velocities = _velocities
-                };
-                sumVel.Schedule().Complete();
+                    Velocities = _velocities,
+                    SumResult = sumVel
+                }.Schedule().Complete();
 
                 Entities
                     .WithSharedComponentFilter(bGrp)
                     .ForEach((ref Velocity velocity) =>
                     {
-                        var sum = sumVel.SumResult - velocity.Vel; // Remove its own velocity to get precise average
+                        var sum = sumVel.Value - velocity.Vel; // Remove its own velocity to get precise average
                         velocity.Vel = sum / (amount - 1);
                     }).Run();
 
                 _velocities.Dispose();
+                sumVel.Dispose();
                 _boidsGroup.ResetFilter();
             }
             _groups.Clear();

@@ -68,16 +68,16 @@ namespace DefaultNamespace
             foreach (var bGrp in _groups)
             {
                 ((SphereCollider*) _sphereCollider.GetUnsafePtr())->Geometry = new SphereGeometry { Radius = bGrp.Distancing};
+                var collider = _sphereCollider;
 
                 Entities
                     .WithSharedComponentFilter(bGrp)
-                    .WithoutBurst()
                     .ForEach((Entity entity, ref Translation position, ref Direction direction) =>
                 {
                     var colliderCastHits = new NativeList<ColliderCastHit>(Allocator.TempJob);
                     new OverlapCollider
                     {
-                        Collider = (Collider*) (_sphereCollider.GetUnsafePtr()),
+                        Collider = (Collider*) collider.GetUnsafePtr(),
                         Position = position.Value,
                         World = world,
                         ColliderCastHits = colliderCastHits
